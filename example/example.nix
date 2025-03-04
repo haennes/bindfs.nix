@@ -5,7 +5,7 @@
 
   bindfs = {
     enable = true;
-    fs = {
+    folders = {
       "/tmp/bindfs/target_mount_1" = {
         ensureExists = {
           target = true;
