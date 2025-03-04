@@ -5,7 +5,7 @@
 
   bindfs = {
     enable = true;
-    fs = {
+    folders = {
       "/tmp/bindfs/target_mount_1" = {
         ensureExists = {
           target = true;
@@ -37,13 +37,13 @@
         };
         perms = null; # permission spec
 
-        #mirror = {
-        #  only = false;
-        #  usersGroups = [
-        #    "targetuser"
-        #    "@targetgroup"
-        #  ];
-        #};
+        mirror = {
+          only = true;
+          usersGroups = [
+            "targetuser"
+            "@targetgroup"
+          ];
+        };
 
         policies = {
           chown = "normal";

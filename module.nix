@@ -1,8 +1,9 @@
-{ lib, ... }:
+{ lib, config, ... }:
 {
   options =
     let
       inherit (lib)
+        attrNames
         stringLength
         mkOption
         mkEnableOption
@@ -31,11 +32,12 @@
             type = nullOr type;
             default = null;
           }
-          // args
+          // (removeAttrs args [ "type" ])
         );
       nullOrPath =
         description:
         nullOrOpt {
+          type = path;
           inherit description;
         };
 
@@ -43,7 +45,6 @@
         description:
         nullOrOpt {
           type = strMatching "[[:digit:]]*(k|M|G|T)?";
-
           inherit description;
         };
       userGroupType =
@@ -67,14 +68,13 @@
         nullOrOpt {
           inherit description;
           type = either int str; # FIXME should add regex here
-          default = 4;
         };
     in
     {
       #putting this here is most likely to not cause any collisions
       bindfs = {
         enable = mkEnableOption "wether to enable bindfs.nix";
-        fs = mkOption {
+        folders = mkOption {
           type = attrsOf (
             submodule (
               { ... }:
@@ -104,8 +104,8 @@
                       apply =
                         #FIXME edge case: group name is exactly 31 chars -> additional @ stretches it to 32
                         v:
-                        map (
-                          x:
+                        lib.mapAttrs (
+                          name: x:
                           assert (
                             stringLength x < 32
                             || abort "Username / Groupname '${x}' is longer than 31 characters which is not allowed!"
@@ -139,7 +139,7 @@
 
                       Requires mounting as root.
                     '';
-                    passwFileRev = nullOrPath ''
+                    passwdFileRev = nullOrPath ''
                       Reversed variant of --map-passwd and --map-group. Like --map=..., but reads the UID (GID) mapping  from  passwd  (group) files (like /etc/passwd and /etc/group).
                       Maps user (group) name provided in the <passwdfile> (<groupfile>) to its corresponding UID (GID).
                       Helpful to create compatible chroot environments where UIDs and GIDs differ.
@@ -232,7 +232,7 @@
                       Like --mirror but disallows access for all other users (except root).
                     '';
                     usersGroups = mkOption {
-                      type = listOf userGroupType "user / group" "";
+                      type = listOf (userGroupType "user / group" "");
                       default = [ ];
                       description = ''
                         Takes a comma- or colon-separated list of users who will see themselves as the owners  of all  files.
@@ -362,6 +362,10 @@
 
                       Currently, the implementation is not entirely fair. See BUGS below.
                     '';
+                    default = {
+                      read = null;
+                      write = null;
+                    };
                   };
                   linkHandling = {
                     hide-hard-links = mkEnableOption "Shows the hard link count of all files as 1.";
@@ -375,17 +379,17 @@
 
                         Symlinks  pointing  outside  the source directory are supported with the following exception: accessing the mountpoint recursively through a resolved symlink  is  not  supported and  will  return an error. This is because a FUSE filesystem cannot reliably call itself recursively without deadlocking, especially in single-threaded mode.
                       '';
-                    };
-                    resolved-symlink-deletion = nullOrOpt {
-                      type = enum [
-                        "deny"
-                        "symlink-only"
-                        "symlink-first"
-                        "target-first"
-                      ];
-                      description = ''
-                        If --resolve-symlinks is enabled,  decides  what  happens  when  a  resolved  symlink  is deleted.   The options are: deny (resolved symlinks cannot be deleted), symlink-only (the underlying symlink is deleted, its target is not), symlink-first (the symlink is deleted, and if that succeeds, the target is deleted but no error is reported if  that  fails)  or target-first  (the  target  is deleted first, and the symlink is deleted only if deleting the target succeeded).  The default is symlink-only.
-                        Note that deleting files inside symlinked directories is always possible  with  all  settings, including deny, unless something else protects those files. '';
+                      resolved-symlink-deletion = nullOrOpt {
+                        type = enum [
+                          "deny"
+                          "symlink-only"
+                          "symlink-first"
+                          "target-first"
+                        ];
+                        description = ''
+                          If --resolve-symlinks is enabled,  decides  what  happens  when  a  resolved  symlink  is deleted.   The options are: deny (resolved symlinks cannot be deleted), symlink-only (the underlying symlink is deleted, its target is not), symlink-first (the symlink is deleted, and if that succeeds, the target is deleted but no error is reported if  that  fails)  or target-first  (the  target  is deleted first, and the symlink is deleted only if deleting the target succeeded).  The default is symlink-only.
+                          Note that deleting files inside symlinked directories is always possible  with  all  settings, including deny, unless something else protects those files. '';
+                      };
                     };
                   };
                   no-allow-other = mkEnableOption ''
@@ -444,6 +448,139 @@
         };
       };
     };
+  config =
+    let
+      cfg = config.bindfs;
+      inherit (lib)
+        mkIf
+        mapAttrs
+        concatLines
+        filter
+        mapAttrsToList
+        optional
+        concatStringsSep
+        flatten
+        isString
+        ;
+      optionalNull = opt: what: optional (opt != null) what;
+    in
+    mkIf cfg.enable {
+      fileSystems = mapAttrs (name: value: {
+        device = value.source;
+        fsType = "fuse.bindfs";
+        options =
+          [ ]
+          ++ optional (value.map.userGroup != { }) (
+            let
+              l = mapAttrsToList (n: v: "${n}/${v}") value.map.userGroup;
+            in
+            "map=${concatStringsSep "," l}"
+          )
+          ++ optionalNull value.map.passwdFile "map-passwd=${value.map.passwdFile}"
+          ++ optionalNull value.map.groupFile "map-group=${value.map.groupFile}"
+          ++ optionalNull value.map.passwdFileRev "map-passwd-rev=${value.map.passwdFileRev}"
+          ++ optionalNull value.map.groupFileRev "map-group-rev=${value.map.groupFileRev}"
+          ++ optionalNull value.map.uid-offset "uid-offset=${value.map.uid-offset}"
+          ++ optionalNull value.map.gid-offset "gid-offset=${value.map.gid-offset}"
+          ++ optionalNull value.fileCreationPolicy.as-user "create-as-user"
+          ++ optionalNull value.fileCreationPolicy.as-mounter "create-as-mounter"
+          ++ optionalNull value.fileCreationPolicy.for-user "create-for-user=${value.fileCreationPolicy.for-user}"
+          ++ optionalNull value.fileCreationPolicy.for-group "create-for-group=${value.fileCreationPolicy.for-group}"
+          ++ optionalNull value.fileCreationPolicy.with-perms "create-with-perms=${toString value.fileCreationPolicy.with-perms}"
+          ++ optionalNull value.force.user "force-user=${value.force.user}"
+          ++ optionalNull value.force.group "force-group=${value.force.group}"
+          ++ optionalNull value.perms "perms=${toString value.perms}"
+          ++ optional (value.mirror.usersGroups != [ ]) (
+            let
+              only_str = if value.mirror.only then "-only" else "";
+              l = value.mirror.usersGroups;
+            in
+            "--mirror${only_str}=${concatStringsSep "," l}"
+          )
+          ++ optionalNull value.policies.chown "chown-${value.policies.chown}"
+          ++ optionalNull value.policies.chgrp "chgrp-${value.policies.chgrp}"
+          ++ flatten (
+            optionalNull value.policies.chmod (
+              let
+                opt = value.policies.chmod;
+              in
+              (
+                if isString opt then
+                  (
+                    if opt == "normal" then
+                      "chmod-normal"
+                    else if opt == "ignore" then
+                      "chmod-ignore"
+                    else if opt == "deny" then
+                      "chmod-deny"
+                    else if opt == "allow-x" then
+                      "chmod-allow-x"
+                    else if opt == "ignore-allow-x" then
+                      [
+                        "chmod-ignore"
+                        "chmod-allow-x"
+                      ]
+                    else if opt == "deny-allow-x" then
+                      [
+                        "chmod-deny"
+                        "chmod-allow-x"
+                      ]
+                    else
+                      abort "invalid state"
+                  )
+                else if opt ? filter then
+                  "chmod-filter=${toString opt.filter}"
+                else
+                  abort "invalid state"
+              )
+            )
+          )
+          ++ optionalNull value.policies.xattr "xattr-${value.policies.xattr}"
+          ++ optional value.denyFileOp.delete "delete-deny"
+          ++ optional value.denyFileOp.rename "rename-deny"
+          ++ optionalNull value.rateLimits.read "read-rate=${value.rateLimits.read}"
+          ++ optionalNull value.rateLimits.write "write-rate=${value.rateLimits.write}"
+          ++ optional value.linkHandling.hide-hard-links "hide-hard-links"
+          ++ optional value.linkHandling.resolve-symlinks.enable "resolve-symlinks"
+          ++ (
+            let
+              v = value.linkHandling.resolve-symlinks.resolved-symlink-deletion;
+            in
+            optionalNull v "resolved-symlink-deletion=${v}"
+          )
+          ++ optional value.no-allow-other "no-allow-other"
+          ++ optional value.realistic-permissions "realistic-permissions"
+          ++ optional value.realistic-permissions "realistic-permissions"
+          ++ optional value.ctime-from-mtime "ctime-from-mtime"
+          ++ optional value.multithreaded.enable "multithreaded"
+          ++ (
+            if value.multithreaded.lock-forwarding then
+              [ "enable-lock-forwarding" ]
+            else
+              [ "disable-lock-forwarding" ]
+          )
+          ++ optional value.enable-ioctl "enable-ioctl"
+          ++ optional value.block-devices-as-files "block-devices-as-files"
+          ++ [ (if value.direct-io then "direct-io" else "no-direct-io") ]
+          ++ optionalNull value.forward-odirect "forward-odirect=${value.forward-odirect}"
+          ++ optional value.read-only "ro"
+          ++ optionalNull value.fsname "fsname=${value.fsname}"
 
-  #system.activationScripts.ensure-syncthing-dir-ownership.text = lib.mkForce "";
+        ;
+
+      }) cfg.folders;
+
+      system.activationScripts.bindfsEnsure.text = concatLines (
+        filter (v: v != [ ]) (
+          mapAttrsToList (
+            target: value:
+            let
+              ensure = value.ensureExiststhen;
+            in
+            (optional ensure.source "mkdir -p ${value.source}") ++ (optional ensure.target "mkdir -p ${target}")
+          ) cfg.folders
+        )
+      );
+    };
+
 }
