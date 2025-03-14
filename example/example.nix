@@ -35,7 +35,7 @@
           user = null; # user
           group = null; # group
         };
-        perms = null; # permission spec
+        perms = null; # permisssion spec
 
         mirror = {
           only = true;
