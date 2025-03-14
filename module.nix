@@ -1,4 +1,9 @@
-{ lib, config, ... }:
+{
+  lib,
+  config,
+  pkgs,
+  ...
+}:
 {
   options =
     let
@@ -569,6 +574,9 @@
         ;
 
       }) cfg.folders;
+
+      # await NixOS/nixpkgs/337697
+      system.fsPackages = [ pkgs.bindfs ];
 
       system.activationScripts.bindfsEnsure =
         let
