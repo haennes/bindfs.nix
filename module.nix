@@ -570,17 +570,21 @@
 
       }) cfg.folders;
 
-      system.activationScripts.bindfsEnsure.text = concatLines (
-        filter (v: v != [ ]) (
-          mapAttrsToList (
-            target: value:
-            let
-              ensure = value.ensureExiststhen;
-            in
-            (optional ensure.source "mkdir -p ${value.source}") ++ (optional ensure.target "mkdir -p ${target}")
-          ) cfg.folders
-        )
-      );
+      system.activationScripts.bindfsEnsure =
+        let
+          contentList = flatten (
+            filter (v: v != [ ]) (
+              mapAttrsToList (
+                target: value:
+                let
+                  ensure = value.ensureExists;
+                in
+                (optional ensure.source "mkdir -p ${value.source}") ++ (optional ensure.target "mkdir -p ${target}")
+              ) cfg.folders
+            )
+          );
+        in
+        lib.mkIf (contentList != [ ]) { text = concatLines contentList; };
     };
 
 }
