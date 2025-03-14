@@ -7,9 +7,17 @@
     enable = true;
     folders = {
       "/tmp/bindfs/target_mount_1" = {
-        ensureExists = {
-          target = true;
-          source = true;
+        ensure = {
+          target = {
+            exists = true;
+            owner = "hannses";
+            group = "users";
+          };
+          source = {
+            exists = true;
+            owner = "syncthing";
+            group = "syncthing";
+          };
         };
         source = "/tmp/bindfs/source";
         map = {
@@ -85,9 +93,17 @@
 
       };
       "/tmp/bindfs/target_mount_2" = {
-        ensureExists = {
-          target = true;
-          source = true;
+        ensure = {
+          target = {
+            exists = true;
+            owner = "hannses";
+            group = "users";
+          };
+          source = {
+            exists = true;
+            owner = "syncthing";
+            group = "syncthing";
+          };
         };
         source = "/tmp/bindfs/source2";
       };

@@ -85,13 +85,29 @@
               { ... }:
               {
                 options = {
-                  ensureExists =
+                  ensure =
                     let
                       mkOptDir = mkEnableOption "add activation Script that ensures dir exists";
+                      mkOptOwnerGroup =
+                        n:
+                        nullOrOpt {
+                          type = str;
+                          description = "if not null chown the directory to be owned by this ${n}";
+                        };
+                      mkOptOwner = mkOptOwnerGroup "owner";
+                      mkOptGroup = mkOptOwnerGroup "group";
                     in
                     {
-                      target = mkOptDir;
-                      source = mkOptDir;
+                      target = {
+                        exists = mkOptDir;
+                        owner = mkOptOwner;
+                        group = mkOptGroup;
+                      };
+                      source = {
+                        exists = mkOptDir;
+                        owner = mkOptOwner;
+                        group = mkOptGroup;
+                      };
                     };
                   source = mkOption {
                     type = path;
@@ -585,9 +601,27 @@
               mapAttrsToList (
                 target: value:
                 let
-                  ensure = value.ensureExists;
+                  ensure = value.ensure;
+                  ensureExists = type: folder: optional ensure.${type}.exists "mkdir -p ${folder}";
+                  ensureOwner =
+                    type: folder:
+                    let
+                      owner = ensure.${type}.owner;
+                    in
+                    optional (owner != null) "chown ${owner} ${folder}";
+                  ensureGroup =
+                    type: folder:
+                    let
+                      group = ensure.${type}.group;
+                    in
+                    optional (group != null) "chown :${group} ${folder}";
                 in
-                (optional ensure.source "mkdir -p ${value.source}") ++ (optional ensure.target "mkdir -p ${target}")
+                (ensureExists "source" value.source)
+                ++ (ensureExists "target" target)
+                ++ (ensureOwner "source" value.source)
+                ++ (ensureOwner "target" target)
+                ++ (ensureGroup "source" value.source)
+                ++ (ensureGroup "target" target)
               ) cfg.folders
             )
           );
