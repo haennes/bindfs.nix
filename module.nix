@@ -61,7 +61,6 @@
             x:
             stringLength x < 32
             || abort "${what} '${x}' is longer than 31 characters which is not allowed!\n${message}";
-          #typeMerge = null;
           merge = mergeUniqueOption {
             inherit message;
             merge = str.merge;
